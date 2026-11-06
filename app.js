@@ -430,8 +430,38 @@
       }
       const padded = ` ${norm(raw)} `;                                                            // "New York City Area"
       for (const [k, r] of keys) if (k.length >= 4 && padded.includes(` ${k} `)) return r;
+      for (const p of parts) {                                                                    // typos: "KERAKLA", "Chhattishgarh"
+        const n = norm(p).replace(/ /g, "");
+        if (n.length < 5) continue;
+        const maxEdits = n.length >= 9 ? 2 : 1;
+        let best = null, bestD = maxEdits + 1, tie = false;
+        for (const [k, r] of keys) {
+          const kk = k.replace(/ /g, "");
+          if (Math.abs(kk.length - n.length) > maxEdits) continue;
+          const d = editDistance(n, kk, maxEdits);
+          if (d < bestD) { best = r; bestD = d; tie = false; } else if (d === bestD && r !== best) tie = true;
+        }
+        if (best && !tie) return best; // only when exactly one region is that close
+      }
       return null;
     };
+  }
+  // Number of single-letter typos between two words — added, missing, wrong or swapped letters
+  // (stops early once it exceeds `max`)
+  function editDistance(a, b, max) {
+    let prev2 = null, prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      let rowMin = i;
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (prev2 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+        rowMin = Math.min(rowMin, cur[j]);
+      }
+      if (rowMin > max) return max + 1;
+      prev2 = prev; prev = cur;
+    }
+    return prev[b.length];
   }
 
   const regionCache = new Map();

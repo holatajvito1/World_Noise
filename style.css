@@ -94,8 +94,8 @@ body.has-mini { --chrome-h: 160px; }
 /* Logo: sharp in the middle, on a blurred, colour-boosted copy of itself */
 .art.has-logo { background: #fff; }
 .art .logo-bg {
-  position: absolute; inset: -20%; width: 140%; height: 140%; object-fit: cover;
-  filter: blur(18px) saturate(1.6); opacity: .9;
+  position: absolute; inset: -20%; width: 140%; height: 140%;
+  filter: blur(10px) saturate(1.6); opacity: .9;
 }
 .art .logo-fg {
   position: relative; width: 74%; height: 74%; object-fit: contain;
@@ -264,10 +264,9 @@ body.has-mini { --chrome-h: 160px; }
   overflow-y: auto;
 }
 .now.open { transform: none; }
-.now-bg {
-  position: fixed; inset: -25%; width: 150%; height: 150%; object-fit: cover;
-  z-index: 0; filter: blur(60px) saturate(1.8) brightness(.62); transform: translateZ(0); pointer-events: none;
-}
+/* Blurred logo backdrop: a tiny (32px) copy stretched over the screen, softened with a light blur */
+.now-bg { position: fixed; inset: -10%; z-index: 0; pointer-events: none; overflow: hidden; }
+.now-bg canvas { width: 100%; height: 100%; display: block; filter: blur(28px) saturate(1.7) brightness(.62); }
 .now::before { content: ""; position: fixed; inset: 0; z-index: 1; background: linear-gradient(transparent 30%, rgba(0,0,0,.35)); pointer-events: none; }
 .now-inner {
   position: relative; z-index: 2; max-width: 440px; min-height: 100%; margin: 0 auto;

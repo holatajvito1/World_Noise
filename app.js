@@ -181,6 +181,38 @@
     return job;
   }
 
+  // Logos can be huge (some are thousands of pixels). Drawing those at full size several times
+  // with blur effects exceeds iPhone Safari's graphics memory, and it then stops drawing parts of
+  // the screen. So each logo is shrunk once into two small copies and only those are shown.
+  const LOGO_PX = 512, BACKDROP_PX = 32;
+  const shrunk = new Map(); // src -> Promise<{ fg, bg } | null>
+  function scaledCanvas(source, w, h, maxSide) {
+    const r = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * r));
+    c.height = Math.max(1, Math.round(h * r));
+    c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+    return c;
+  }
+  function shrinkLogo(src) {
+    if (!shrunk.has(src)) shrunk.set(src, new Promise((resolve) => {
+      const img = new Image();
+      img.referrerPolicy = "no-referrer";
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth, h = img.naturalHeight;
+          resolve({ fg: scaledCanvas(img, w, h, LOGO_PX), bg: scaledCanvas(img, w, h, BACKDROP_PX) });
+        } catch { resolve(null); }
+        img.src = ""; // let the browser free the full-size image
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    }));
+    return shrunk.get(src);
+  }
+  // A fresh copy of a small canvas for each place it's shown
+  const copyCanvas = (c, cls) => { const out = scaledCanvas(c, c.width, c.height, Infinity); out.className = cls; return out; };
+
   // Colour tile with the station name, replaced by the station's logo once it's found.
   function art(el, s, title, small) {
     const label = s ? stationName(s) : title;
@@ -191,18 +223,23 @@
     el.innerHTML = `<span class="art-text">${esc(text)}</span>`;
     if (!s) return el;
     const token = (el._artToken = (el._artToken || 0) + 1);
-    findLogo(s).then((logo) => {
+    findLogo(s).then(async (logo) => {
       if (!logo || el._artToken !== token) return;
+      const pics = await shrinkLogo(logo.src);
+      if (!pics || el._artToken !== token) return;
       // Big square logos fill the tile; anything else sits in the middle on a blurred copy of itself
       const full = logo.w >= 300 && Math.abs(logo.w / logo.h - 1) < 0.08;
+      const fg = copyCanvas(pics.fg, "logo-fg");
+      fg.style.setProperty("--logo-max", `${Math.round(logo.w * 2.5)}px`);
+      el.textContent = "";
+      if (!full) el.append(copyCanvas(pics.bg, "logo-bg"));
+      el.append(fg);
       el.classList.add("has-logo");
       el.classList.toggle("full", full);
-      el.innerHTML = `<img class="logo-bg" alt="" src="${esc(logo.src)}" referrerpolicy="no-referrer" />
-        <img class="logo-fg" alt="" src="${esc(logo.src)}" referrerpolicy="no-referrer" style="--logo-max:${Math.round(logo.w * 2.5)}px" />`;
-      el.dispatchEvent(new CustomEvent("logo", { detail: logo }));
     });
     return el;
   }
+
   const artSpan = (s, title, small) => art(Object.assign(document.createElement("span"), { className: "art" }), s, title, small);
 
   // ================= Building blocks =================
@@ -697,9 +734,11 @@
     now.style.setProperty("--now-bg", deep(stationName(s)));
     // Now Playing background: a big blurred copy of the logo (falls back to the colour gradient)
     const bg = $("#now-bg");
-    bg.removeAttribute("src");
-    bg.hidden = true;
-    findLogo(s).then((logo) => { if (logo && current === s) { bg.src = logo.src; bg.hidden = false; } });
+    bg.textContent = "";
+    findLogo(s).then(async (logo) => {
+      const pics = logo && (await shrinkLogo(logo.src));
+      if (pics && current === s) { bg.textContent = ""; bg.append(copyCanvas(pics.bg, "")); }
+    });
     const site = $("#now-site");
     if (s.homepage && /^https?:/.test(s.homepage)) site.href = s.homepage; else site.removeAttribute("href");
     updateFavButtons();

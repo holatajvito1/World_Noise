@@ -3,12 +3,14 @@
 Listen to live radio from anywhere in the world.
 
 ## How it works
-- **Pick a place:** choose a country, then a state or region (e.g. United States → Texas)
-- **📍 Near me:** lists stations close to where you are
-- **Search** stations by name
-- **☆ Favorites:** tap the star to save a station; tap ★ at the top to see your saved ones
-- **🎲 Surprise me:** plays a random station from the current list
-- Works great on iPhone: add it to your Home Screen and it behaves like an app (lock-screen controls included)
+Styled like a modern iPhone music app, and it follows your phone's light/dark setting.
+
+- **Home:** Top Picks in your country, Recently Played, Regions, stations from Around the World, and genres
+- **Places:** Near Me (uses your location), pick any country, then drill into a state or region (e.g. United States → Texas)
+- **Search:** colourful genre categories, or search stations and cities by name
+- **Library:** your Favorites and Recently Played
+- **Mini player → Now Playing:** tap the mini player for the full-screen player; skip ⏭ jumps to the next station in the list; swipe down to close
+- Add it to your iPhone Home Screen and it behaves like an app (lock-screen controls included)
 
 Station data comes from the free, community-run [Radio Browser](https://www.radio-browser.info) directory. No API key or account is needed.
 

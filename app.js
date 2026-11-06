@@ -4,7 +4,7 @@
 (() => {
   "use strict";
 
-  // ---------- Config ----------
+  // ================= Config =================
   const API_MIRRORS = [
     "https://de1.api.radio-browser.info",
     "https://de2.api.radio-browser.info",
@@ -12,14 +12,27 @@
     "https://nl1.api.radio-browser.info",
     "https://at1.api.radio-browser.info",
   ];
-  const LIMIT = 300;    // stations per list
   const NEARBY_KM = 150;
-  // On a secure (https) site, browsers refuse to play insecure http streams, so don't list them
-  const SECURE_ONLY = location.protocol === "https:";
-  const LS = { favs: "wn.favorites", settings: "wn.settings" };
+  const SECURE_ONLY = location.protocol === "https:"; // https pages can't play http streams
+  const LS = { favs: "wn.favorites", recent: "wn.recent", settings: "wn.settings", volume: "wn.volume" };
+  const GENRES = [
+    ["Pop", "pop"], ["Rock", "rock"], ["News", "news"], ["Talk", "talk"], ["Hip-Hop", "hip hop"],
+    ["Country", "country"], ["Jazz", "jazz"], ["Classical", "classical"], ["Dance", "dance"],
+    ["Electronic", "electronic"], ["Oldies", "oldies"], ["80s", "80s"], ["Latin", "latin"],
+    ["R&B", "rnb"], ["Reggae", "reggae"], ["Blues", "blues"], ["Chill", "chillout"],
+    ["Ambient", "ambient"], ["Sports", "sports"], ["Christian", "christian"], ["Indie", "indie"], ["Metal", "metal"],
+  ];
+  // Radio Browser uses formal names; show the everyday ones
+  const SHORT_NAMES = {
+    "The United States Of America": "United States", "The United Kingdom Of Great Britain And Northern Ireland": "United Kingdom",
+    "The Russian Federation": "Russia", "Korea, Republic Of": "South Korea", "Iran, Islamic Republic Of": "Iran",
+    "Viet Nam": "Vietnam", "Bolivia, Plurinational State Of": "Bolivia", "Venezuela, Bolivarian Republic Of": "Venezuela",
+    "Taiwan, Republic Of China": "Taiwan", "Tanzania, United Republic Of": "Tanzania", "Moldova, Republic Of": "Moldova",
+    "The Czech Republic": "Czechia", "Czech Republic": "Czechia",
+  };
 
-  // ---------- Helpers ----------
-  const $ = (sel) => document.querySelector(sel);
+  // ================= Helpers =================
+  const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const flag = (cc) => (cc && cc.length === 2 ? String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 127397 + c.charCodeAt(0))) : "🌐");
   const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
@@ -32,28 +45,19 @@
       Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(((lon2 - lon1) * r) / 2) ** 2;
     return 12742 * Math.asin(Math.sqrt(a));
   };
-  // Radio Browser uses formal names; show the everyday ones
-  const SHORT_NAMES = {
-    "The United States Of America": "United States", "The United Kingdom Of Great Britain And Northern Ireland": "United Kingdom",
-    "The Russian Federation": "Russia", "The Netherlands": "Netherlands", "The Philippines": "Philippines",
-    "Korea, Republic Of": "South Korea", "Iran, Islamic Republic Of": "Iran", "Viet Nam": "Vietnam",
-    "Bolivia, Plurinational State Of": "Bolivia", "Venezuela, Bolivarian Republic Of": "Venezuela",
-    "Taiwan, Republic Of China": "Taiwan", "Tanzania, United Republic Of": "Tanzania", "Moldova, Republic Of": "Moldova",
-    "The Dominican Republic": "Dominican Republic", "The United Arab Emirates": "United Arab Emirates",
-    "The Czech Republic": "Czechia", "Czech Republic": "Czechia",
-  };
   const countryName = (n) => SHORT_NAMES[n] || (n || "").replace(/^The /, "");
   const streamUrl = (s) => s.url_resolved || s.url || "";
   const blocked = (s) => SECURE_ONLY && streamUrl(s).startsWith("http:");
-  const stationName = (s) => (s.name || "").trim() || "Unnamed station";
-  const describe = (s) => {
-    const place = [s.state, countryName(s.country)].filter(Boolean).join(", ") || "Unknown location";
-    const tags = (s.tags || "").split(",").filter(Boolean).slice(0, 2).join(", ");
-    return [`${flag(s.countrycode)} ${place}`, tags].filter(Boolean).join(" · ");
-  };
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const stationName = (s) => (s.name || "").replace(/\s+/g, " ").trim() || "Unnamed Station";
+  const place = (s) => [s.state, countryName(s.country)].filter(Boolean).join(", ") || "Live Radio";
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const dedupe = (list) => { const seen = new Set(); return list.filter((s) => !seen.has(s.stationuuid) && seen.add(s.stationuuid)); };
+  const hueOf = (str) => { let h = 0; for (const c of str || "") h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
+  const gradient = (str) => { const h = hueOf(str); return `linear-gradient(140deg, hsl(${h} 72% 58%), hsl(${(h + 35) % 360} 70% 38%))`; };
+  const deep = (str) => { const h = hueOf(str); return `linear-gradient(180deg, hsl(${h} 40% 36%), hsl(${(h + 25) % 360} 45% 14%))`; };
+  const solid = (str) => { const h = hueOf(str); return `hsl(${h} 38% 30%)`; };
 
-  // ---------- Radio Browser API (tries each mirror until one answers) ----------
+  // ================= Radio Browser API (tries each mirror until one answers) =================
   let mirrorIdx = 0;
   async function api(path, params = {}) {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString();
@@ -69,311 +73,505 @@
     }
     throw lastErr || new Error("Radio directory unreachable");
   }
-  const baseParams = () => ({ hidebroken: "true", order: "clickcount", reverse: "true", is_https: SECURE_ONLY ? "true" : "" });
+  const search = (params) => api("/json/stations/search", {
+    hidebroken: "true", order: "clickcount", reverse: "true", is_https: SECURE_ONLY ? "true" : "", ...params,
+  });
+  const OFFLINE = "Can't reach the radio directory right now. Check your connection.";
 
-  // ---------- State ----------
-  const settings = store.get(LS.settings, null);
-  let favorites = store.get(LS.favs, {}); // uuid -> station
-  let results = [];
-  let showFavs = false;
-  let current = null;
+  // ================= State =================
+  let favorites = store.get(LS.favs, {});   // uuid -> station (+ _added)
+  let recent = store.get(LS.recent, []);    // most recent first
   let countries = [];
-  let queryId = 0;
+  let country = "";                         // ISO code, "" = whole world
+  let current = null, queue = [], qIndex = -1;
+  const lists = new Map();                  // list key -> stations (so cards/rows know their queue)
+  let listSeq = 0;
+  const registerList = (stations) => { const k = "l" + ++listSeq; lists.set(k, stations); return k; };
 
-  const el = {
-    country: $("#country"), state: $("#state"), search: $("#search"), near: $("#near-btn"), favFilter: $("#fav-filter"),
-    status: $("#status"), list: $("#list"), random: $("#random-btn"),
-    player: $("#player"), audio: $("#audio"), play: $("#play-btn"), fav: $("#fav-btn"),
-    npName: $("#np-name"), npMeta: $("#np-meta"), npLogo: $("#np-logo img"),
-  };
-
-  function setStatus(text, isError = false) {
-    el.status.textContent = text;
-    el.status.classList.toggle("error", isError);
-  }
-  const lookup = (uuid) => results.find((s) => s.stationuuid === uuid) || favorites[uuid] || (current?.stationuuid === uuid ? current : null);
-
-  function setLogo(img, src) {
-    img.hidden = true;
-    img.removeAttribute("src");
-    if (!src || (SECURE_ONLY && src.startsWith("http:"))) return;
-    img.onload = () => { img.hidden = false; };
-    img.onerror = () => { img.hidden = true; img.removeAttribute("src"); };
+  // ================= Artwork =================
+  // Colour tile with the station name; the station's logo goes on top if it's big enough to look good.
+  function art(el, s, title, small) {
+    const label = s ? stationName(s) : title;
+    el.style.setProperty("--art-bg", gradient(label));
+    // Small artwork shows just the first word (e.g. "KEXP"); big artwork shows the full name
+    const text = small ? label.split(" ")[0].slice(0, 6) : label.split(" ").slice(0, 4).join(" ");
+    el.innerHTML = `<span class="art-text">${esc(text)}</span><img alt="" referrerpolicy="no-referrer" hidden />`;
+    const img = el.querySelector("img");
+    const src = s && s.favicon;
+    if (!src || (SECURE_ONLY && src.startsWith("http:"))) return el;
+    img.onload = () => { img.hidden = img.naturalWidth < 96; };
+    img.onerror = () => { img.hidden = true; };
+    img.loading = "lazy";
     img.src = src;
+    return el;
   }
+  const artSpan = (s, title, small) => art(Object.assign(document.createElement("span"), { className: "art" }), s, title, small);
 
-  // ---------- Station list ----------
-  function renderList() {
-    const q = el.search.value.trim().toLowerCase();
-    let stations = showFavs ? Object.values(favorites) : results;
-    if (showFavs && q) stations = stations.filter((s) => stationName(s).toLowerCase().includes(q));
-    el.list.textContent = "";
-    const frag = document.createDocumentFragment();
-    for (const s of stations) {
+  // ================= Building blocks =================
+  function card(s, key, i) {
+    const b = document.createElement("button");
+    b.className = "card";
+    b.dataset.list = key; b.dataset.i = i;
+    b.append(artSpan(s));
+    b.insertAdjacentHTML("beforeend", `<div class="card-title">${esc(stationName(s))}</div><div class="card-sub">${esc(place(s))}</div>`);
+    return b;
+  }
+  function hero(s, key, i, kicker) {
+    const b = document.createElement("button");
+    b.className = "hero";
+    b.dataset.list = key; b.dataset.i = i;
+    b.style.setProperty("--hero-bg", solid(stationName(s)));
+    b.append(artSpan(s));
+    b.insertAdjacentHTML("beforeend", `<div class="hero-text"><div class="hero-kicker">${esc(kicker)}</div>
+      <div class="hero-title">${esc(stationName(s))}</div><div class="hero-sub">${esc(place(s))}</div></div>`);
+    return b;
+  }
+  function tile(label, onClick) {
+    const b = document.createElement("button");
+    b.className = "tile";
+    b.style.setProperty("--tile-bg", gradient(label + "!"));
+    b.textContent = label;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function sectionTitle(text, onMore) {
+    const h = document.createElement("h2");
+    h.className = "section-title";
+    if (onMore) {
+      const b = document.createElement("button");
+      b.innerHTML = `${esc(text)}<svg class="chev"><use href="#i-chev"/></svg>`;
+      b.addEventListener("click", onMore);
+      h.append(b);
+    } else h.textContent = text;
+    return h;
+  }
+  function shelf(items) { const d = document.createElement("div"); d.className = "shelf"; d.append(...items); return d; }
+
+  function renderTracks(ul, stations) {
+    const key = registerList(stations);
+    ul.textContent = "";
+    stations.forEach((s, i) => {
       const li = document.createElement("li");
+      li.className = "track" + (current?.stationuuid === s.stationuuid ? " playing" : "");
+      li.dataset.list = key; li.dataset.i = i; li.dataset.uuid = s.stationuuid;
+      li.append(artSpan(s, null, true));
       const fav = !!favorites[s.stationuuid];
-      li.className = "station" + (current?.stationuuid === s.stationuuid ? " playing" : "");
-      li.dataset.uuid = s.stationuuid;
-      li.innerHTML = `
-        <span class="logo"><img alt="" loading="lazy" referrerpolicy="no-referrer" hidden /></span>
-        <div class="info"><span class="name">${esc(stationName(s))}</span><span class="meta">${esc(describe(s))}</span></div>
-        <button class="icon-btn fav${fav ? " on" : ""}" aria-label="${fav ? "Remove from" : "Add to"} favorites">${fav ? "★" : "☆"}</button>`;
-      setLogo(li.querySelector("img"), s.favicon);
-      frag.appendChild(li);
-    }
-    el.list.appendChild(frag);
-    if (showFavs) {
-      setStatus(stations.length ? plural(stations.length, "favorite") : "No favorites yet. Tap ☆ next to a station to save it here.");
-    }
+      li.insertAdjacentHTML("beforeend", `<div class="track-text"><span class="track-title">${esc(stationName(s))}</span>
+        <span class="track-sub">${esc(flag(s.countrycode) + " " + place(s))}</span></div>
+        <button class="track-fav${fav ? " on" : ""}" aria-label="${fav ? "Remove from" : "Add to"} favorites"><svg><use href="#i-star${fav ? "-fill" : ""}"/></svg></button>`);
+      ul.append(li);
+    });
   }
 
-  el.list.addEventListener("click", (e) => {
-    const li = e.target.closest(".station");
-    const s = li && lookup(li.dataset.uuid);
+  // One click handler for every card / row that plays a station
+  document.addEventListener("click", (e) => {
+    const favBtn = e.target.closest(".track-fav");
+    const item = e.target.closest("[data-list]");
+    if (!item) return;
+    const stations = lists.get(item.dataset.list);
+    const s = stations && stations[+item.dataset.i];
     if (!s) return;
-    if (e.target.closest(".fav")) toggleFavorite(s);
-    else play(s);
+    if (favBtn) { toggleFavorite(s); favBtn.classList.toggle("on", !!favorites[s.stationuuid]); favBtn.innerHTML = `<svg><use href="#i-star${favorites[s.stationuuid] ? "-fill" : ""}"/></svg>`; return; }
+    play(s, stations, +item.dataset.i);
   });
 
-  // ---------- Places ----------
+  // ================= Tabs & navigation =================
+  const views = { home: $("#view-home"), places: $("#view-places"), search: $("#view-search"), library: $("#view-library") };
+  let activeTab = "home";
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    const tab = t.dataset.tab;
+    if (tab === activeTab && !detail.classList.contains("open")) { views[tab].scrollTo({ top: 0, behavior: "smooth" }); return; }
+    closeDetail(true);
+    activeTab = tab;
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+    Object.entries(views).forEach(([k, v]) => v.classList.toggle("active", k === tab));
+    if (tab === "library") renderLibrary();
+    if (tab === "search" && !$("#search").value) renderSearchHome();
+  }));
+
+  // ---- Detail page (station list) ----
+  const detail = $("#detail");
+  const navbar = detail.querySelector(".navbar");
+  let detailToken = 0;
+  async function openList({ title, sub, load, artStation }) {
+    const token = ++detailToken;
+    $("#back-label").textContent = views[activeTab].dataset.name;
+    $("#nav-title").textContent = title;
+    $("#detail-title").textContent = title;
+    $("#detail-sub").textContent = sub || "";
+    art($("#detail-art"), artStation || null, title);
+    $("#detail-list").textContent = "";
+    $("#detail-status").textContent = "Loading…";
+    detail.scrollTop = 0;
+    navbar.classList.remove("solid");
+    detail.classList.add("open");
+    detail.setAttribute("aria-hidden", "false");
+    let stations = [];
+    try { stations = await load(); } catch { if (token === detailToken) $("#detail-status").textContent = OFFLINE; return; }
+    if (token !== detailToken) return;
+    detail.stations = stations;
+    $("#detail-status").textContent = stations.length ? "" : "No stations here yet.";
+    renderTracks($("#detail-list"), stations);
+  }
+  function closeDetail(instant) {
+    detailToken++;
+    if (instant) { detail.style.transition = "none"; requestAnimationFrame(() => (detail.style.transition = "")); }
+    detail.classList.remove("open");
+    detail.setAttribute("aria-hidden", "true");
+  }
+  $("#back-btn").addEventListener("click", () => closeDetail());
+  detail.addEventListener("scroll", () => navbar.classList.toggle("solid", detail.scrollTop > 200));
+  $("#play-all").addEventListener("click", () => { const l = detail.stations || []; const i = l.findIndex((s) => !blocked(s)); if (i >= 0) play(l[i], l, i); });
+  $("#shuffle-all").addEventListener("click", () => playRandom(detail.stations || []));
+
+  // ================= Home =================
+  const countryLabel = () => {
+    const c = countries.find((x) => x.iso_3166_1 === country);
+    return c ? countryName(c.name) : "the World";
+  };
+  async function renderHome() {
+    const root = $("#home-content");
+    root.innerHTML = `<p class="empty">Loading…</p>`;
+    const where = countryLabel();
+    let top = [], world = [], regions = [];
+    try {
+      [top, world, regions] = await Promise.all([
+        search({ countrycode: country, limit: 40, has_extended_info: "" }),
+        country ? search({ limit: 24, order: "votes" }) : Promise.resolve([]),
+        country ? loadRegions(country) : Promise.resolve([]),
+      ]);
+    } catch { root.innerHTML = `<p class="empty">${OFFLINE}</p>`; return; }
+    root.textContent = "";
+
+    // Top Picks: big cards
+    if (top.length) {
+      const picks = top.slice(0, 8), key = registerList(picks);
+      root.append(sectionTitle(`Top Picks in ${where}`, () => openList({ title: `Top in ${where}`, sub: "Most listened", load: async () => top })),
+        shelf(picks.map((s, i) => hero(s, key, i, i === 0 ? "Most Popular" : "Live Radio"))));
+    }
+    // Recently Played
+    if (recent.length) {
+      const key = registerList(recent);
+      root.append(sectionTitle("Recently Played", () => openList({ title: "Recently Played", load: async () => recent })),
+        shelf(recent.slice(0, 15).map((s, i) => card(s, key, i))));
+    }
+    // Regions in this country
+    if (regions.length > 1) {
+      root.append(sectionTitle(`Regions in ${where}`, () => $('.tab[data-tab="places"]').click()),
+        shelf(regions.slice(0, 16).map((r) => tile(r, () => openRegion(r)))));
+    }
+    // More from this country
+    if (top.length > 8) {
+      const more = top.slice(8), key = registerList(more);
+      root.append(sectionTitle(`More from ${where}`), shelf(more.map((s, i) => card(s, key, i))));
+    }
+    // Around the world
+    if (world.length) {
+      const key = registerList(world);
+      root.append(sectionTitle("Around the World", () => openList({ title: "Around the World", sub: "Fan favorites", load: async () => world })),
+        shelf(world.map((s, i) => card(s, key, i))));
+    }
+    // Genres
+    root.append(sectionTitle("Browse by Genre", () => $('.tab[data-tab="search"]').click()),
+      shelf(GENRES.slice(0, 10).map(([label, tag]) => tile(label, () => openGenre(label, tag)))));
+  }
+  $("#shuffle-home").addEventListener("click", () => {
+    const pool = [...$("#home-content").querySelectorAll("[data-list]")].map((b) => lists.get(b.dataset.list)[+b.dataset.i]);
+    playRandom(dedupe(pool));
+  });
+
+  // ================= Places =================
   async function loadCountries() {
-    countries = (await api("/json/countries", { order: "name", hidebroken: "true" }))
+    countries = (await api("/json/countries", { hidebroken: "true" }))
       .filter((c) => c.iso_3166_1 && c.stationcount > 0)
       .sort((a, b) => countryName(a.name).localeCompare(countryName(b.name)));
-    const frag = document.createDocumentFragment();
-    for (const c of countries) frag.appendChild(new Option(`${flag(c.iso_3166_1)} ${countryName(c.name)}`, c.iso_3166_1));
-    el.country.appendChild(frag);
+    const sel = $("#country");
+    for (const c of countries) sel.add(new Option(`${flag(c.iso_3166_1)} ${countryName(c.name)}`, c.iso_3166_1));
   }
-
-  async function loadStates(code) {
-    el.state.length = 1; // keep "All regions"
-    el.state.value = "";
-    el.state.hidden = true;
-    if (!code) return;
+  const regionCache = new Map();
+  async function loadRegions(code) {
+    if (regionCache.has(code)) return regionCache.get(code);
     const c = countries.find((x) => x.iso_3166_1 === code);
     let names = [];
     try {
       const states = await api(`/json/states/${encodeURIComponent(c ? c.name : code)}/`, { hidebroken: "true" });
-      names = states.filter((s) => s.name && s.stationcount > 0).map((s) => s.name.trim());
-    } catch { /* fall back to regions seen in results */ }
-    if (!names.length) names = results.map((s) => (s.state || "").trim()).filter(Boolean);
-    names = [...new Set(names)].sort((a, b) => a.localeCompare(b));
-    if (el.country.value !== code) return; // user changed country meanwhile
-    for (const n of names) el.state.add(new Option(n, n));
-    el.state.hidden = names.length < 2;
+      names = [...new Set(states.filter((s) => s.name && s.stationcount > 0).map((s) => s.name.trim()))].sort((a, b) => a.localeCompare(b));
+    } catch { /* no regions */ }
+    regionCache.set(code, names);
+    return names;
   }
-
-  function placeLabel() {
-    if (el.state.value) return el.state.value;
-    if (el.country.value) return el.country.selectedOptions[0].textContent;
-    return "the world";
+  function row(label, value, onClick, icon) {
+    const b = document.createElement("button");
+    b.className = "row";
+    b.innerHTML = `${icon ? `<span class="row-icon accent">${icon}</span>` : ""}<span class="row-label">${esc(label)}</span>
+      ${value ? `<span class="row-value">${esc(value)}</span>` : ""}<svg class="chev"><use href="#i-chev"/></svg>`;
+    b.addEventListener("click", onClick);
+    return b;
   }
-
-  async function query() {
-    const id = ++queryId;
-    const params = {
-      ...baseParams(), limit: LIMIT,
-      countrycode: el.country.value, state: el.state.value, name: el.search.value.trim(),
-    };
-    if (el.state.value) params.stateExact = "true";
-    setStatus("Loading stations…");
-    try {
-      const data = await api("/json/stations/search", params);
-      if (id !== queryId) return; // a newer search replaced this one
-      results = data;
-      if (!showFavs) {
-        renderList();
-        const q = el.search.value.trim();
-        setStatus(results.length
-          ? `${results.length >= LIMIT ? "Top " : ""}${plural(results.length, "station")}${q ? ` matching “${q}”` : ""} in ${placeLabel()}`
-          : `No stations found in ${placeLabel()}.`);
-      }
-    } catch (e) {
-      if (id !== queryId) return;
-      setStatus("Couldn't reach the radio directory. Check your connection and try again.", true);
-      console.error(e);
+  async function renderPlaces() {
+    $("#country-label").textContent = country ? `${flag(country)} ${countryLabel()}` : "Whole world";
+    const box = $("#regions");
+    box.textContent = "";
+    if (!country) {
+      $("#regions-title").textContent = "Popular Countries";
+      [...countries].sort((a, b) => b.stationcount - a.stationcount).slice(0, 40).forEach((c) =>
+        box.append(row(`${flag(c.iso_3166_1)}  ${countryName(c.name)}`, "", () => openCountry(c.iso_3166_1))));
+      return;
     }
+    $("#regions-title").textContent = "Regions";
+    box.append(row(`All of ${countryLabel()}`, "", () => openCountry(country)));
+    const code = country, regions = await loadRegions(code);
+    if (code !== country) return;
+    regions.forEach((r) => box.append(row(r, "", () => openRegion(r))));
+  }
+  const openCountry = (code) => {
+    const c = countries.find((x) => x.iso_3166_1 === code);
+    const name = c ? countryName(c.name) : code;
+    openList({ title: `${name}`, sub: `${flag(code)} Live Radio`, load: () => search({ countrycode: code, limit: 300 }) });
+  };
+  const openRegion = (r) => openList({
+    title: r, sub: `${flag(country)} ${countryLabel()}`,
+    load: () => search({ countrycode: country, state: r, stateExact: "true", limit: 300 }),
+  });
+  $("#country").addEventListener("change", (e) => {
+    country = e.target.value;
+    store.set(LS.settings, { country });
+    renderPlaces();
+    renderHome();
+  });
+  $("#near-row").addEventListener("click", () => {
+    openList({ title: "Near Me", sub: "Within " + NEARBY_KM + " km", load: nearMe });
+  });
+  function nearMe() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) { $("#detail-status").textContent = "Location isn't available in this browser."; return resolve([]); }
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        try {
+          const data = await search({ has_geo_info: "true", limit: 500, geo_lat: lat.toFixed(4), geo_long: lon.toFixed(4), geo_distance: NEARBY_KM * 1000 });
+          resolve(data.filter((s) => Number.isFinite(s.geo_lat) && km(lat, lon, s.geo_lat, s.geo_long) <= NEARBY_KM)
+            .sort((a, b) => km(lat, lon, a.geo_lat, a.geo_long) - km(lat, lon, b.geo_lat, b.geo_long)));
+        } catch (e) { reject(e); }
+      }, () => {
+        resolve([]);
+        setTimeout(() => ($("#detail-status").textContent = "Turn on Location for this site to see stations near you."), 0);
+      }, { timeout: 15000, maximumAge: 600000 });
+    });
   }
 
-  function saveSettings() { store.set(LS.settings, { country: el.country.value }); }
-
-  el.country.addEventListener("change", async () => {
-    saveSettings();
-    el.state.value = "";
-    el.state.hidden = true;
-    setFavMode(false);
-    await query();
-    await loadStates(el.country.value);
-  });
-  el.state.addEventListener("change", () => { setFavMode(false); query(); });
-  el.search.addEventListener("input", debounce(() => (showFavs ? renderList() : query()), 400));
-
-  // ---------- Near me ----------
-  el.near.addEventListener("click", () => {
-    if (!navigator.geolocation) { setStatus("Your browser can't share its location.", true); return; }
-    setStatus("Finding your location…");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => findNearby(pos.coords.latitude, pos.coords.longitude),
-      () => setStatus("Location is off. Allow location for this site, or pick a country instead.", true),
-      { timeout: 15000, maximumAge: 600000 },
-    );
-  });
-
-  async function findNearby(lat, lon) {
-    const id = ++queryId;
-    setFavMode(false);
-    setStatus("Looking for stations near you…");
+  // ================= Search =================
+  const openGenre = (label, tag) => openList({ title: label, sub: "Around the World", load: () => search({ tag, limit: 200 }) });
+  function renderSearchHome() {
+    const root = $("#search-content");
+    root.textContent = "";
+    const grid = document.createElement("div");
+    grid.className = "tiles";
+    GENRES.forEach(([label, tag]) => grid.append(tile(label, () => openGenre(label, tag))));
+    root.append(sectionTitle("Browse Categories"), grid);
+  }
+  let searchToken = 0;
+  const runSearch = debounce(async () => {
+    const q = $("#search").value.trim(), token = ++searchToken, root = $("#search-content");
+    if (!q) { renderSearchHome(); return; }
+    root.innerHTML = `<p class="empty">Searching…</p>`;
     try {
-      const data = await api("/json/stations/search", {
-        ...baseParams(), has_geo_info: "true", limit: 500,
-        geo_lat: lat.toFixed(4), geo_long: lon.toFixed(4), geo_distance: NEARBY_KM * 1000,
-      });
-      if (id !== queryId) return;
-      const found = data
-        .filter((s) => Number.isFinite(s.geo_lat) && Number.isFinite(s.geo_long))
-        .map((s) => ({ s, d: km(lat, lon, s.geo_lat, s.geo_long) }))
-        .filter((x) => x.d <= NEARBY_KM)
-        .sort((a, b) => a.d - b.d)
-        .map((x) => x.s);
-      results = found;
-      el.country.value = "";
-      el.state.hidden = true;
-      el.search.value = "";
-      renderList();
-      setStatus(found.length
-        ? `${plural(found.length, "station")} within ${NEARBY_KM} km of you`
-        : "No mapped stations near you. Try picking your country instead.");
-    } catch (e) {
-      if (id !== queryId) return;
-      setStatus("Couldn't reach the radio directory. Check your connection and try again.", true);
-    }
-  }
+      const [byName, byPlace] = await Promise.all([search({ name: q, limit: 60 }), search({ state: q, limit: 30 })]);
+      if (token !== searchToken) return;
+      const found = dedupe([...byName, ...byPlace]);
+      root.textContent = "";
+      if (!found.length) { root.innerHTML = `<p class="empty">No results for “${esc(q)}”.</p>`; return; }
+      const ul = document.createElement("ul");
+      ul.className = "tracks";
+      renderTracks(ul, found);
+      root.append(ul);
+    } catch { if (token === searchToken) root.innerHTML = `<p class="empty">${OFFLINE}</p>`; }
+  }, 350);
+  $("#search").addEventListener("input", runSearch);
+  $("#search").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
 
-  // ---------- Favorites ----------
-  function setFavMode(on) {
-    showFavs = on;
-    el.favFilter.setAttribute("aria-pressed", String(on));
-    el.favFilter.textContent = on ? "★ Favorites" : "★";
-    el.search.placeholder = on ? "Search favorites" : "Search stations";
+  // ================= Library =================
+  const favList = () => Object.values(favorites).sort((a, b) => (b._added || 0) - (a._added || 0));
+  function renderLibrary() {
+    const favs = favList();
+    $("#fav-count").textContent = favs.length || "";
+    const grid = $("#library-grid");
+    grid.textContent = "";
+    if (!favs.length) { grid.innerHTML = `<p class="empty" style="grid-column:1/-1;padding:0">Tap the star on any station to add it to your Library.</p>`; return; }
+    const key = registerList(favs);
+    favs.slice(0, 30).forEach((s, i) => grid.append(card(s, key, i)));
   }
-  el.favFilter.addEventListener("click", () => {
-    setFavMode(!showFavs);
-    el.search.value = "";
-    if (showFavs) renderList(); else query();
-  });
+  document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.open === "favorites") openList({ title: "Favorites", sub: "Your stations", load: async () => favList() });
+    else openList({ title: "Recently Played", load: async () => recent });
+  }));
 
   function toggleFavorite(s) {
     if (favorites[s.stationuuid]) delete favorites[s.stationuuid];
-    else favorites[s.stationuuid] = s;
+    else favorites[s.stationuuid] = { ...s, _added: Date.now() };
     store.set(LS.favs, favorites);
-    updatePlayer();
-    renderList();
+    updateFavButtons();
+    if (activeTab === "library") renderLibrary();
   }
-  el.fav.addEventListener("click", () => current && toggleFavorite(current));
 
-  // ---------- Player ----------
+  // ================= Player =================
+  const audio = $("#audio");
+  const mini = $("#mini"), now = $("#now");
   let hls = null;
   const stopHls = () => { if (hls) { hls.destroy(); hls = null; } };
 
-  function play(s) {
+  function play(s, list, index) {
+    if (list) { queue = list; qIndex = index ?? list.indexOf(s); }
     current = s;
     stopHls();
-    el.audio.pause();
-    el.player.classList.remove("idle");
-    el.player.classList.add("loading");
-    showMeta(describe(s));
-    updatePlayer();
-    el.list.querySelectorAll(".station").forEach((li) => li.classList.toggle("playing", li.dataset.uuid === s.stationuuid));
+    audio.pause();
+    setLoading(true);
+    setNowSub(place(s));
+    updatePlayerUi();
+    addRecent(s);
 
-    if (blocked(s)) { fail("This station's stream isn't secure, so the browser won't play it."); return; }
-
+    if (blocked(s)) { fail("This station's stream isn't secure, so it can't play here."); return; }
     const url = streamUrl(s);
     const isHls = s.hls === 1 || /\.m3u8(\?|$)/i.test(url);
-    if (isHls && window.Hls && Hls.isSupported() && !el.audio.canPlayType("application/vnd.apple.mpegurl")) {
+    if (isHls && window.Hls && Hls.isSupported() && !audio.canPlayType("application/vnd.apple.mpegurl")) {
       hls = new Hls();
-      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail("This station couldn't be played right now."); });
+      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail("This station isn't available right now."); });
       hls.loadSource(url);
-      hls.attachMedia(el.audio);
+      hls.attachMedia(audio);
     } else {
-      el.audio.src = url;
+      audio.src = url;
     }
-    el.audio.play().catch((e) => { if (e.name !== "AbortError") fail("This station couldn't be played right now."); });
-
-    // Let Radio Browser know someone listened (keeps its popularity ranking useful)
-    api(`/json/url/${encodeURIComponent(s.stationuuid)}`).catch(() => {});
+    audio.play().catch((e) => { if (e.name !== "AbortError") fail("This station isn't available right now."); });
+    api(`/json/url/${encodeURIComponent(s.stationuuid)}`).catch(() => {}); // counts the listen on Radio Browser
 
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: stationName(s), artist: describe(s).replace(/^\S+\s/, ""),
-        artwork: s.favicon && s.favicon.startsWith("https:") ? [{ src: s.favicon }] : [],
+        title: stationName(s), artist: place(s), album: "World Noise",
+        artwork: s.favicon && s.favicon.startsWith("https:") ? [{ src: s.favicon }] : [{ src: "icons/icon-512.png", sizes: "512x512" }],
       });
     }
   }
-
-  function fail(msg) {
-    el.player.classList.remove("loading");
-    el.play.textContent = "▶";
-    showMeta(msg, true);
+  function playRandom(pool) {
+    const ok = pool.filter((s) => !blocked(s));
+    if (!ok.length) return;
+    const i = Math.floor(Math.random() * ok.length);
+    play(ok[i], ok, i);
   }
-  function showMeta(text, isError = false) {
-    el.npMeta.textContent = text;
-    el.npMeta.classList.toggle("error", isError);
+  function step(dir) {
+    if (!queue.length) return;
+    for (let n = 1; n <= queue.length; n++) {
+      const i = (qIndex + dir * n + queue.length * n) % queue.length;
+      if (!blocked(queue[i])) { qIndex = i; play(queue[i]); return; }
+    }
+  }
+  function addRecent(s) {
+    recent = [s, ...recent.filter((x) => x.stationuuid !== s.stationuuid)].slice(0, 30);
+    store.set(LS.recent, recent);
   }
 
-  function updatePlayer() {
+  function setLoading(on) { mini.classList.toggle("loading", on); now.classList.toggle("loading", on); }
+  function setPlayingUi(on) {
+    const icon = `<svg><use href="#i-${on ? "pause" : "play"}"/></svg>`;
+    $("#mini-play").innerHTML = icon; $("#now-play").innerHTML = icon;
+    $("#mini-play").setAttribute("aria-label", on ? "Pause" : "Play");
+    $("#now-play").setAttribute("aria-label", on ? "Pause" : "Play");
+    now.classList.toggle("playing", on);
+  }
+  function fail(msg) { setLoading(false); setPlayingUi(false); setNowSub(msg, true); $("#mini-sub").textContent = "Not available"; }
+  function setNowSub(text, err = false) { const el = $("#now-sub"); el.textContent = text; el.classList.toggle("error", err); }
+
+  function updatePlayerUi() {
     const s = current;
-    el.play.disabled = el.fav.disabled = !s;
     if (!s) return;
-    el.npName.textContent = stationName(s);
-    setLogo(el.npLogo, s.favicon);
-    const fav = !!favorites[s.stationuuid];
-    el.fav.textContent = fav ? "★" : "☆";
-    el.fav.classList.toggle("on", fav);
-    el.fav.setAttribute("aria-label", fav ? "Remove from favorites" : "Add to favorites");
+    mini.hidden = false;
+    document.body.classList.add("has-mini");
+    $("#mini-title").textContent = stationName(s);
+    $("#mini-sub").textContent = place(s);
+    art($("#mini-art"), s, null, true);
+    art($("#now-art"), s);
+    $("#now-title").textContent = stationName(s);
+    now.style.setProperty("--now-bg", deep(stationName(s)));
+    const site = $("#now-site");
+    if (s.homepage && /^https?:/.test(s.homepage)) site.href = s.homepage; else site.removeAttribute("href");
+    updateFavButtons();
+    document.querySelectorAll(".track").forEach((li) => li.classList.toggle("playing", li.dataset.uuid === s.stationuuid));
     document.title = `${stationName(s)} · World Noise`;
   }
-
-  el.audio.addEventListener("playing", () => {
-    el.player.classList.remove("loading");
-    el.play.textContent = "❚❚";
-    el.play.setAttribute("aria-label", "Pause");
-    if (current) showMeta("Live · " + describe(current));
-  });
-  el.audio.addEventListener("pause", () => {
-    el.play.textContent = "▶";
-    el.play.setAttribute("aria-label", "Play");
-  });
-  el.audio.addEventListener("waiting", () => el.player.classList.add("loading"));
-  el.audio.addEventListener("error", () => { if (!hls && current && el.audio.getAttribute("src")) fail("This station couldn't be played right now."); });
-
-  el.play.addEventListener("click", () => {
+  function updateFavButtons() {
     if (!current) return;
-    if (el.audio.paused) play(current); // reconnect to the live stream rather than resuming old audio
-    else { el.audio.pause(); stopHls(); el.player.classList.remove("loading"); }
-  });
+    const on = !!favorites[current.stationuuid];
+    const b = $("#now-fav");
+    b.innerHTML = `<svg><use href="#i-star${on ? "-fill" : ""}"/></svg>`;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-label", on ? "Remove from favorites" : "Add to favorites");
+  }
 
-  el.random.addEventListener("click", () => {
-    const pool = (showFavs ? Object.values(favorites) : results).filter((s) => !blocked(s));
-    if (!pool.length) { setStatus("Nothing to pick from yet."); return; }
-    play(pool[Math.floor(Math.random() * pool.length)]);
-  });
+  function togglePlay() {
+    if (!current) return;
+    if (audio.paused) play(current); // rejoin the live broadcast instead of resuming old audio
+    else { audio.pause(); stopHls(); setLoading(false); }
+  }
+  audio.addEventListener("playing", () => { setLoading(false); setPlayingUi(true); if (current) { setNowSub(place(current)); $("#mini-sub").textContent = place(current); } });
+  audio.addEventListener("pause", () => setPlayingUi(false));
+  audio.addEventListener("waiting", () => setLoading(true));
+  audio.addEventListener("error", () => { if (!hls && current && audio.getAttribute("src")) fail("This station isn't available right now."); });
 
-  // Space bar toggles play (when not typing)
+  $("#mini-play").addEventListener("click", togglePlay);
+  $("#now-play").addEventListener("click", togglePlay);
+  $("#mini-next").addEventListener("click", () => step(1));
+  $("#now-next").addEventListener("click", () => step(1));
+  $("#now-prev").addEventListener("click", () => step(-1));
+  $("#now-fav").addEventListener("click", () => current && toggleFavorite(current));
+  if ("mediaSession" in navigator) {
+    const ms = navigator.mediaSession;
+    ms.setActionHandler("play", togglePlay);
+    ms.setActionHandler("pause", togglePlay);
+    ms.setActionHandler("nexttrack", () => step(1));
+    ms.setActionHandler("previoustrack", () => step(-1));
+  }
+
+  // Volume (iPhone controls volume with its hardware buttons only, so hide the slider there)
+  const vol = $("#volume");
+  audio.volume = store.get(LS.volume, 1);
+  vol.value = audio.volume;
+  vol.addEventListener("input", () => { audio.volume = +vol.value; store.set(LS.volume, audio.volume); });
+  { const t = new Audio(); t.volume = 0.5; if (t.volume !== 0.5) $("#vol-row").hidden = true; }
+
+  // Now Playing open / close (tap grabber, or swipe down)
+  function openNow() { now.classList.add("open"); now.setAttribute("aria-hidden", "false"); }
+  function closeNow() { now.classList.remove("open"); now.setAttribute("aria-hidden", "true"); now.style.transform = ""; }
+  $("#mini-open").addEventListener("click", openNow);
+  $("#now-close").addEventListener("click", closeNow);
+  let dragY = null;
+  now.addEventListener("touchstart", (e) => { if (now.scrollTop <= 0 && !e.target.closest("input")) dragY = e.touches[0].clientY; }, { passive: true });
+  now.addEventListener("touchmove", (e) => {
+    if (dragY == null) return;
+    const dy = e.touches[0].clientY - dragY;
+    if (dy > 0) { now.style.transition = "none"; now.style.transform = `translateY(${dy}px)`; }
+  }, { passive: true });
+  now.addEventListener("touchend", (e) => {
+    if (dragY == null) return;
+    const dy = e.changedTouches[0].clientY - dragY;
+    dragY = null;
+    now.style.transition = "";
+    if (dy > 120) closeNow(); else now.style.transform = "";
+  });
   document.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && current && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)) {
-      e.preventDefault();
-      el.play.click();
-    }
+    if (e.key === "Escape" && now.classList.contains("open")) closeNow();
+    if (e.code === "Space" && current && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)) { e.preventDefault(); togglePlay(); }
   });
 
-  // ---------- Start ----------
+  // ================= Start =================
   (async function init() {
     try { await loadCountries(); } catch (e) { console.error(e); }
     // First visit: start in the visitor's own country (from their language setting, e.g. en-US → US)
+    const saved = store.get(LS.settings, null);
     const guess = (navigator.language || "").split("-")[1]?.toUpperCase();
-    const start = settings ? settings.country : guess;
-    if (start && countries.some((c) => c.iso_3166_1 === start)) el.country.value = start;
-    await query();
-    if (el.country.value) await loadStates(el.country.value);
+    const start = saved ? saved.country : guess;
+    if (start && countries.some((c) => c.iso_3166_1 === start)) country = start;
+    $("#country").value = country;
+    renderHome();
+    renderPlaces();
+    renderSearchHome();
+    renderLibrary();
   })();
 })();

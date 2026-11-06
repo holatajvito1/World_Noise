@@ -11,42 +11,162 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="World Noise" />
-  <meta name="theme-color" content="#0f1216" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="header">
-      <h1>World <span>Noise</span></h1>
-      <button id="random-btn" class="icon-btn" aria-label="Play a random station" title="Surprise me">🎲</button>
+  <!-- Reusable icons -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 2.6 2.5 10.3c-.4.3-.1.9.4.9H4.5V20c0 .6.4 1 1 1h4.2v-6h4.6v6h4.2c.6 0 1-.4 1-1v-8.8h1.6c.5 0 .8-.6.4-.9z" fill="currentColor"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9.2"/><ellipse cx="12" cy="12" rx="4" ry="9.2"/><path d="M3 12h18M4.5 7h15M4.5 17h15"/></g></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><path fill="currentColor" d="M3.5 3.5h3.2v17H3.5zM8.6 3.5h3.2v17H8.6zM13.6 4.6l3-.9 4.6 16-3 .9z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.2c0-.8.9-1.3 1.5-.8l11.6 7.8c.6.4.6 1.2 0 1.6L8.5 20.6c-.6.5-1.5 0-1.5-.8z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h4v16H6zM14 4h4v16h-4z"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path fill="currentColor" d="M2 6.3c0-.7.8-1.1 1.3-.7l8.2 5.7c.5.3.5 1.1 0 1.4l-8.2 5.7c-.5.4-1.3 0-1.3-.7zM12 6.3c0-.7.8-1.1 1.3-.7l8.2 5.7c.5.3.5 1.1 0 1.4l-8.2 5.7c-.5.4-1.3 0-1.3-.7z"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><use href="#i-next" transform="matrix(-1 0 0 1 24 0)"/></symbol>
+    <symbol id="i-shuffle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h3.5c2 0 3.2 1 4.3 2.7l2.4 4.6c1.1 1.7 2.3 2.7 4.3 2.7H21M3 17h3.5c1.2 0 2.1-.4 2.9-1.1M14.6 8.1c.8-.7 1.7-1.1 2.9-1.1H21M18.5 4.5 21 7l-2.5 2.5M18.5 14.5 21 17l-2.5 2.5"/></g></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+    <symbol id="i-star-fill" viewBox="0 0 24 24"><path fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.6A2.6 2.6 0 1 1 12 6.4a2.6 2.6 0 0 1 0 5.2z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="m15 4-8 8 8 8"/></symbol>
+    <symbol id="i-vol-lo" viewBox="0 0 24 24"><path fill="currentColor" d="M4 9h3.5L12 5v14l-4.5-4H4z"/></symbol>
+    <symbol id="i-vol-hi" viewBox="0 0 24 24"><path fill="currentColor" d="M3 9h3.5L11 5v14l-4.5-4H3z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M14.5 9a4.5 4.5 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/></g></symbol>
+  </svg>
+
+  <!-- ===== Tabs ===== -->
+  <section id="view-home" class="view active" data-name="Home">
+    <header class="large-title">
+      <h1>Home</h1>
+      <button id="shuffle-home" class="circle-btn" aria-label="Play a random station"><svg><use href="#i-shuffle"/></svg></button>
     </header>
+    <div id="home-content"></div>
+  </section>
 
-    <div class="where">
-      <select id="country" aria-label="Country"><option value="">🌍 Whole world</option></select>
-      <select id="state" aria-label="Region" hidden><option value="">All regions</option></select>
+  <section id="view-places" class="view" data-name="Places">
+    <header class="large-title"><h1>Places</h1></header>
+    <div class="group">
+      <button class="row" id="near-row">
+        <span class="row-icon accent"><svg><use href="#i-pin"/></svg></span>
+        <span class="row-label">Near Me</span>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </button>
+      <label class="row">
+        <span class="row-icon accent"><svg><use href="#i-globe"/></svg></span>
+        <span class="row-label">Country</span>
+        <span id="country-label" class="row-value">Whole world</span>
+        <svg class="chev"><use href="#i-chev"/></svg>
+        <select id="country" class="row-select" aria-label="Country"><option value="">🌍 Whole world</option></select>
+      </label>
     </div>
+    <h2 class="section-title" id="regions-title">Regions</h2>
+    <div class="group" id="regions"></div>
+  </section>
 
-    <div class="tools">
-      <input id="search" type="search" placeholder="Search stations" autocomplete="off" />
-      <button id="near-btn" class="chip" title="Stations near you">📍 Near me</button>
-      <button id="fav-filter" class="chip" aria-pressed="false">★</button>
+  <section id="view-search" class="view" data-name="Search">
+    <header class="large-title"><h1>Search</h1></header>
+    <div class="searchbar">
+      <svg><use href="#i-search"/></svg>
+      <input id="search" type="search" placeholder="Stations, cities, and more" autocomplete="off" enterkeyhint="search" />
     </div>
+    <div id="search-content"></div>
+  </section>
 
-    <p id="status" class="status" aria-live="polite">Loading stations…</p>
-    <ul id="list" class="list"></ul>
-  </main>
-
-  <footer id="player" class="player idle" aria-label="Player">
-    <span id="np-logo" class="logo"><img alt="" referrerpolicy="no-referrer" hidden /></span>
-    <div class="np-text">
-      <span id="np-name" class="np-name">Pick a station</span>
-      <span id="np-meta" class="np-meta">Choose a place above, then tap a station</span>
+  <section id="view-library" class="view" data-name="Library">
+    <header class="large-title"><h1>Library</h1></header>
+    <div class="group plain">
+      <button class="row" data-open="favorites">
+        <span class="row-icon accent bare"><svg><use href="#i-star-fill"/></svg></span>
+        <span class="row-label">Favorites</span>
+        <span id="fav-count" class="row-value"></span>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </button>
+      <button class="row" data-open="recent">
+        <span class="row-icon accent bare"><svg><use href="#i-clock"/></svg></span>
+        <span class="row-label">Recently Played</span>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </button>
     </div>
-    <button id="fav-btn" class="icon-btn" aria-label="Add to favorites" disabled>☆</button>
-    <button id="play-btn" class="play-btn" aria-label="Play" disabled>▶</button>
-  </footer>
+    <h2 class="section-title">Recently Added</h2>
+    <div id="library-grid" class="grid"></div>
+  </section>
+
+  <!-- ===== Pushed station list (like an album/playlist page) ===== -->
+  <section id="detail" class="view detail" aria-hidden="true">
+    <nav class="navbar">
+      <button id="back-btn" class="back"><svg><use href="#i-back"/></svg><span id="back-label">Back</span></button>
+      <span id="nav-title" class="nav-title"></span>
+    </nav>
+    <div class="detail-head">
+      <div id="detail-art" class="detail-art art"></div>
+      <h1 id="detail-title"></h1>
+      <p id="detail-sub"></p>
+      <div class="action-row">
+        <button id="play-all" class="action"><svg><use href="#i-play"/></svg>Play</button>
+        <button id="shuffle-all" class="action"><svg><use href="#i-shuffle"/></svg>Shuffle</button>
+      </div>
+    </div>
+    <p id="detail-status" class="empty"></p>
+    <ul id="detail-list" class="tracks"></ul>
+  </section>
+
+  <!-- ===== Bottom chrome: mini player + tab bar ===== -->
+  <div class="chrome">
+    <div id="mini" class="mini glass" hidden>
+      <button id="mini-open" class="mini-open" aria-label="Open Now Playing">
+        <span id="mini-art" class="art mini-art"></span>
+        <span class="mini-text"><span id="mini-title" class="mini-title"></span><span id="mini-sub" class="mini-sub"></span></span>
+      </button>
+      <button id="mini-play" class="mini-btn" aria-label="Play"><svg><use href="#i-play"/></svg></button>
+      <button id="mini-next" class="mini-btn" aria-label="Next station"><svg><use href="#i-next"/></svg></button>
+    </div>
+    <div class="tabrow">
+      <nav class="tabbar glass" aria-label="Tabs">
+        <button class="tab active" data-tab="home"><svg><use href="#i-home"/></svg><span>Home</span></button>
+        <button class="tab" data-tab="places"><svg><use href="#i-globe"/></svg><span>Places</span></button>
+        <button class="tab" data-tab="library"><svg><use href="#i-library"/></svg><span>Library</span></button>
+      </nav>
+      <button class="tab search-tab glass" data-tab="search" aria-label="Search"><svg><use href="#i-search"/></svg></button>
+    </div>
+  </div>
+
+  <!-- ===== Now Playing (full screen) ===== -->
+  <div id="now" class="now" aria-hidden="true">
+    <div class="now-inner">
+      <button id="now-close" class="grabber" aria-label="Close Now Playing"></button>
+      <div id="now-art" class="art now-art"></div>
+      <div class="now-meta">
+        <div class="now-text">
+          <div id="now-title" class="now-title"></div>
+          <div id="now-sub" class="now-sub"></div>
+        </div>
+        <button id="now-fav" class="now-icon" aria-label="Add to favorites"><svg><use href="#i-star"/></svg></button>
+      </div>
+      <div class="live-bar"><span class="live-track"><span class="live-fill"></span></span>
+        <div class="live-labels"><span id="now-status">Live</span><span class="live-pill">LIVE</span></div>
+      </div>
+      <div class="now-controls">
+        <button id="now-prev" aria-label="Previous station"><svg><use href="#i-prev"/></svg></button>
+        <button id="now-play" class="big" aria-label="Play"><svg><use href="#i-play"/></svg></button>
+        <button id="now-next" aria-label="Next station"><svg><use href="#i-next"/></svg></button>
+      </div>
+      <div id="vol-row" class="vol-row">
+        <svg><use href="#i-vol-lo"/></svg>
+        <input id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+        <svg><use href="#i-vol-hi"/></svg>
+      </div>
+      <div class="now-footer">
+        <a id="now-site" class="now-icon" target="_blank" rel="noopener" aria-label="Station website"><svg><use href="#i-link"/></svg></a>
+      </div>
+    </div>
+  </div>
 
   <audio id="audio" preload="none"></audio>
 

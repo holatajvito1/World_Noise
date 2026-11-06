@@ -14,7 +14,7 @@
   ];
   const NEARBY_KM = 150;
   const SECURE_ONLY = location.protocol === "https:"; // https pages can't play http streams
-  const LS = { favs: "wn.favorites", recent: "wn.recent", settings: "wn.settings", volume: "wn.volume" };
+  const LS = { favs: "wn.favorites", recent: "wn.recent", settings: "wn.settings", volume: "wn.volume", logos: "wn.logos" };
   const GENRES = [
     ["Pop", "pop"], ["Rock", "rock"], ["News", "news"], ["Talk", "talk"], ["Hip-Hop", "hip hop"],
     ["Country", "country"], ["Jazz", "jazz"], ["Classical", "classical"], ["Dance", "dance"],
@@ -89,20 +89,72 @@
   const registerList = (stations) => { const k = "l" + ++listSeq; lists.set(k, stations); return k; };
 
   // ================= Artwork =================
-  // Colour tile with the station name; the station's logo goes on top if it's big enough to look good.
+  // Logos come from (1) the logo listed in Radio Browser, then (2) the icon of the station's
+  // own website. The first one that loads at a usable size wins and is remembered.
+  const LOGO_MIN = 48;
+  const logoCache = new Map(Object.entries(store.get(LS.logos, {}))); // uuid -> {src,w,h} | null
+  const logoJobs = new Map();
+  const saveLogos = debounce(() => {
+    const entries = [...logoCache].slice(-800); // keep the stored list small
+    store.set(LS.logos, Object.fromEntries(entries));
+  }, 1500);
+  const hostOf = (url) => { try { const u = new URL(url); return /^https?:$/.test(u.protocol) ? u.hostname : ""; } catch { return ""; } };
+
+  function logoCandidates(s) {
+    const list = [];
+    const fav = (s.favicon || "").trim();
+    if (/^https?:\/\//i.test(fav)) {
+      if (fav.startsWith("https:")) list.push(fav);
+      else { list.push(fav.replace(/^http:/i, "https:")); if (!SECURE_ONLY) list.push(fav); }
+    }
+    const host = hostOf(s.homepage) || hostOf(fav);
+    if (host) list.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=256`);
+    return [...new Set(list)];
+  }
+  const loadImage = (src) => new Promise((resolve) => {
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => resolve(img.naturalWidth >= LOGO_MIN && img.naturalHeight >= LOGO_MIN / 2 ? { src, w: img.naturalWidth, h: img.naturalHeight } : null);
+    img.onerror = () => resolve(null);
+    setTimeout(() => resolve(null), 8000);
+    img.src = src;
+  });
+  function findLogo(s) {
+    const id = s.stationuuid;
+    if (logoCache.has(id)) return Promise.resolve(logoCache.get(id));
+    if (logoJobs.has(id)) return logoJobs.get(id);
+    const job = (async () => {
+      let found = null;
+      for (const src of logoCandidates(s)) { found = await loadImage(src); if (found) break; }
+      logoCache.set(id, found);
+      logoJobs.delete(id);
+      saveLogos();
+      return found;
+    })();
+    logoJobs.set(id, job);
+    return job;
+  }
+
+  // Colour tile with the station name, replaced by the station's logo once it's found.
   function art(el, s, title, small) {
     const label = s ? stationName(s) : title;
     el.style.setProperty("--art-bg", gradient(label));
+    el.classList.remove("has-logo", "full");
     // Small artwork shows just the first word (e.g. "KEXP"); big artwork shows the full name
     const text = small ? label.split(" ")[0].slice(0, 6) : label.split(" ").slice(0, 4).join(" ");
-    el.innerHTML = `<span class="art-text">${esc(text)}</span><img alt="" referrerpolicy="no-referrer" hidden />`;
-    const img = el.querySelector("img");
-    const src = s && s.favicon;
-    if (!src || (SECURE_ONLY && src.startsWith("http:"))) return el;
-    img.onload = () => { img.hidden = img.naturalWidth < 96; };
-    img.onerror = () => { img.hidden = true; };
-    img.loading = "lazy";
-    img.src = src;
+    el.innerHTML = `<span class="art-text">${esc(text)}</span>`;
+    if (!s) return el;
+    const token = (el._artToken = (el._artToken || 0) + 1);
+    findLogo(s).then((logo) => {
+      if (!logo || el._artToken !== token) return;
+      // Big square logos fill the tile; anything else sits in the middle on a blurred copy of itself
+      const full = logo.w >= 300 && Math.abs(logo.w / logo.h - 1) < 0.08;
+      el.classList.add("has-logo");
+      el.classList.toggle("full", full);
+      el.innerHTML = `<img class="logo-bg" alt="" src="${esc(logo.src)}" referrerpolicy="no-referrer" />
+        <img class="logo-fg" alt="" src="${esc(logo.src)}" referrerpolicy="no-referrer" style="--logo-max:${Math.round(logo.w * 2.5)}px" />`;
+      el.dispatchEvent(new CustomEvent("logo", { detail: logo }));
+    });
     return el;
   }
   const artSpan = (s, title, small) => art(Object.assign(document.createElement("span"), { className: "art" }), s, title, small);
@@ -446,7 +498,11 @@
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: stationName(s), artist: place(s), album: "World Noise",
-        artwork: s.favicon && s.favicon.startsWith("https:") ? [{ src: s.favicon }] : [{ src: "icons/icon-512.png", sizes: "512x512" }],
+        artwork: [{ src: "icons/icon-512.png", sizes: "512x512" }],
+      });
+      // Swap in the station's logo for the lock screen once we have it
+      findLogo(s).then((logo) => {
+        if (logo && current === s) navigator.mediaSession.metadata.artwork = [{ src: logo.src, sizes: `${logo.w}x${logo.h}` }];
       });
     }
   }
@@ -490,6 +546,11 @@
     art($("#now-art"), s);
     $("#now-title").textContent = stationName(s);
     now.style.setProperty("--now-bg", deep(stationName(s)));
+    // Now Playing background: a big blurred copy of the logo (falls back to the colour gradient)
+    const bg = $("#now-bg");
+    bg.removeAttribute("src");
+    bg.hidden = true;
+    findLogo(s).then((logo) => { if (logo && current === s) { bg.src = logo.src; bg.hidden = false; } });
     const site = $("#now-site");
     if (s.homepage && /^https?:/.test(s.homepage)) site.href = s.homepage; else site.removeAttribute("href");
     updateFavButtons();

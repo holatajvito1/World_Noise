@@ -91,8 +91,21 @@ body.has-mini { --chrome-h: 160px; }
   aspect-ratio: 1;
 }
 .art .art-text { padding: 12%; font-size: var(--art-font, 18px); overflow-wrap: break-word; max-width: 100%; text-shadow: 0 1px 2px rgba(0,0,0,.15); }
-.art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #fff; }
-.art img[hidden] { display: none; }
+/* Logo: sharp in the middle, on a blurred, colour-boosted copy of itself */
+.art.has-logo { background: #fff; }
+.art .logo-bg {
+  position: absolute; inset: -20%; width: 140%; height: 140%; object-fit: cover;
+  filter: blur(18px) saturate(1.6); opacity: .9;
+}
+.art .logo-fg {
+  position: relative; width: 74%; height: 74%; object-fit: contain;
+  max-width: var(--logo-max, none); max-height: var(--logo-max, none);
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.18));
+}
+.art.full .logo-bg { display: none; }
+.art.full .logo-fg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; max-width: none; max-height: none; filter: none; }
+.track .art .logo-fg, .mini-art .logo-fg { width: 80%; height: 80%; filter: none; }
+.mini-art .logo-fg { width: 70%; height: 70%; }
 
 /* ---------- Horizontal shelves ---------- */
 .shelf {
@@ -251,9 +264,13 @@ body.has-mini { --chrome-h: 160px; }
   overflow-y: auto;
 }
 .now.open { transform: none; }
-.now::before { content: ""; position: fixed; inset: 0; background: linear-gradient(transparent 30%, rgba(0,0,0,.35)); pointer-events: none; }
+.now-bg {
+  position: fixed; inset: -25%; width: 150%; height: 150%; object-fit: cover;
+  z-index: 0; filter: blur(60px) saturate(1.8) brightness(.62); transform: translateZ(0); pointer-events: none;
+}
+.now::before { content: ""; position: fixed; inset: 0; z-index: 1; background: linear-gradient(transparent 30%, rgba(0,0,0,.35)); pointer-events: none; }
 .now-inner {
-  position: relative; max-width: 440px; min-height: 100%; margin: 0 auto;
+  position: relative; z-index: 2; max-width: 440px; min-height: 100%; margin: 0 auto;
   display: flex; flex-direction: column; justify-content: center; gap: 22px;
   padding: calc(var(--safe-top) + 24px) 28px calc(var(--safe-bottom) + 24px);
 }

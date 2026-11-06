@@ -59,7 +59,7 @@
   const titleWord = (w) => w.split("-").map((p, i) => (i > 0 && SMALL.has(p.toLowerCase()) ? p.toLowerCase()
     : p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())).join("-"); // "Île-de-France"
   function tidyCase(str, cc) {
-    const letters = str.replace(/[^\p{L}]/gu, "");
+    const letters = str.replace(/[^\p{Lu}\p{Ll}]/gu, ""); // only scripts with upper/lower case
     if (letters.length < 2) return str;
     const allUpper = letters === letters.toUpperCase(), allLower = letters === letters.toLowerCase();
     if (!allUpper && !allLower) return str; // already deliberately mixed: "KEXP 90.3", "radioEins"
@@ -395,9 +395,10 @@
   const loadRegionTable = () => (regionTable ||= fetch("regions.json").then((r) => r.json()).catch(() => ({})).then((d) => (regionTableData = d)));
   const STOP_WORDS = new Set(["state", "province", "provincia", "provincie", "region", "regione", "county", "oblast", "prefecture",
     "ken", "to", "fu", "do", "krai", "kraj", "land", "department", "departement", "voivodeship", "canton", "kanton",
-    "of", "the", "and", "estado", "de", "del", "da", "stato", "comunidad", "communaute", "autonomous", "republic"]); // "and" so "&" spellings match
-  const norm = (str) => (str || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
-    .replace(/['’ʻ`]/g, "").replace(/[^a-z0-9Ѐ-ӿ]+/g, " ").trim()
+    "of", "the", "and", "और", "و", "estado", "de", "del", "da", "stato", "comunidad", "communaute", "autonomous", "republic"]); // "and" so "&" spellings match
+  // Lowercase, drop Latin accents and punctuation; letters of every script (Devanagari, Tamil, Arabic…) are kept
+  const norm = (str) => (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/['’ʻ`]/g, "").replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim()
     .split(" ").filter((t) => t && !STOP_WORDS.has(t)).join(" ");
 
   function regionMatcher(list) {
@@ -409,6 +410,8 @@
         const spelled = a.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
         for (const k of new Set([norm(a), norm(spelled)])) {
           if (k && !exact.has(k)) { exact.set(k, region); keys.push([k, region]); }
+          const joined = k.replace(/ /g, ""); // "Tamilnadu", "उत्तरप्रदेश"
+          if (joined && !exact.has(joined)) exact.set(joined, region);
         }
       }
       if (code) codes.set(code, region);
@@ -416,7 +419,11 @@
     keys.sort((a, b) => b[0].length - a[0].length); // longest first: "West Virginia" before "Virginia"
     return (raw) => {
       const parts = [raw, ...raw.split(/[,/|()]/)].map((p) => p.trim()).filter(Boolean);
-      for (const p of parts) { const r = exact.get(norm(p)); if (r) return r; }                  // "Texas", "Bayern", "NYC"
+      for (const p of parts) {                                                                    // "Texas", "Bayern", "NYC"
+        const n = norm(p);
+        const r = exact.get(n) || exact.get(n.replace(/ /g, ""));
+        if (r) return r;
+      }
       for (const p of parts) {                                                                    // "TX", "N.S.W."
         const c = p.replace(/\./g, "");
         if (c.length >= 2 && c.length <= 3 && c === c.toUpperCase() && codes.has(c)) return codes.get(c);

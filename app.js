@@ -48,8 +48,52 @@
   const countryName = (n) => SHORT_NAMES[n] || (n || "").replace(/^The /, "");
   const streamUrl = (s) => s.url_resolved || s.url || "";
   const blocked = (s) => SECURE_ONLY && streamUrl(s).startsWith("http:");
-  const stationName = (s) => (s.name || "").replace(/\s+/g, " ").trim() || "Unnamed Station";
-  const place = (s) => [s.state, countryName(s.country)].filter(Boolean).join(", ") || "Live Radio";
+  // ---- Consistent capitalisation ----
+  // Names typed ALL CAPS or all lowercase get tidied; names with deliberate mixed case are left alone.
+  const KEEP_CAPS = new Set(["FM", "AM", "DAB", "HD", "TV", "DJ", "UK", "USA", "EU", "NYC", "DC", "BBC", "NPR", "PBS", "ABC", "CBC",
+    "CBS", "NBC", "CNN", "ESPN", "RTL", "RAI", "ORF", "SRF", "SWR", "WDR", "NDR", "MDR", "HR", "BR", "RBB", "SR", "RTE", "RTÉ", "RNE", "RFI",
+    "RFM", "RMC", "NRJ", "FIP", "SBS", "KBS", "MBC", "NHK", "ERT", "TRT", "RTP", "RTS", "RTBF", "VRT", "NPO", "SVT", "SR", "NRK", "DR", "YLE",
+    "CRI", "RFE", "VOA", "KCRW", "WFMU", "WNYC", "KEXP", "R&B", "EDM", "II", "III", "IV", "XL"]);
+  const SMALL = new Set(["a", "an", "and", "at", "de", "del", "der", "des", "den", "di", "da", "do", "du", "e", "el", "et", "for", "in", "la",
+    "le", "les", "los", "las", "of", "on", "the", "to", "und", "van", "von", "y"]);
+  const titleWord = (w) => w.split("-").map((p, i) => (i > 0 && SMALL.has(p.toLowerCase()) ? p.toLowerCase()
+    : p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())).join("-"); // "Île-de-France"
+  function tidyCase(str, cc) {
+    const letters = str.replace(/[^\p{L}]/gu, "");
+    if (letters.length < 2) return str;
+    const allUpper = letters === letters.toUpperCase(), allLower = letters === letters.toLowerCase();
+    if (!allUpper && !allLower) return str; // already deliberately mixed: "KEXP 90.3", "radioEins"
+    let first = true;
+    return str.replace(/[\p{L}\p{N}&'’.-]+/gu, (w) => {
+      const up = w.toUpperCase(), low = w.toLowerCase(), isFirst = first;
+      first = false;
+      if (KEEP_CAPS.has(up.replace(/[.']/g, ""))) return up;
+      if (/^\d+s$/i.test(w)) return low;                                     // decades: "80s"
+      if (/\d/.test(w)) return up;                                          // "106.1", "1LIVE"
+      if (cc === "US" && /^[KW][A-Z]{2,3}$/i.test(w) && allUpper) return up;  // US call letters: "WBEZ"
+      if (allUpper && w.length <= 3 && !/[AEIOUY]/i.test(w)) return up;      // abbreviations without vowels: "BBC"
+      if (!isFirst && SMALL.has(low)) return low;
+      return titleWord(w);
+    });
+  }
+  const stationName = (s) => tidyCase((s.name || "").replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, ""), s.countrycode) || "Unnamed Station";
+  const NOT_A_PLACE = new Set(["internet", "online", "web", "worldwide", "world", "global", "international", "none", "unknown", "n a", "na", "various"]);
+  // The station's region: the official name when we recognise it, otherwise its own text, tidied
+  function regionName(s) {
+    const raw = (s.state || "").replace(/\s+/g, " ").trim();
+    if (!raw) return "";
+    const list = regionTableData && regionTableData[s.countrycode];
+    if (list) {
+      let match = regionMatchers.get(s.countrycode);
+      if (!match) regionMatchers.set(s.countrycode, (match = regionMatcher(list)));
+      const r = match(raw);
+      if (r) return r.name;
+    }
+    const n = norm(raw);
+    if (!n || NOT_A_PLACE.has(n) || n === norm(s.country) || n === norm(countryName(s.country)) || raw.length > 40) return "";
+    return tidyCase(raw);
+  }
+  const place = (s) => [regionName(s), countryName(s.country)].filter(Boolean).join(", ") || "Live Radio";
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   const dedupe = (list) => { const seen = new Set(); return list.filter((s) => !seen.has(s.stationuuid) && seen.add(s.stationuuid)); };
   const hueOf = (str) => { let h = 0; for (const c of str || "") h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
@@ -344,8 +388,9 @@
   // Radio Browser's "state" field is free text ("NY", "New York City", "Austin, TX", typos, cities…).
   // We match each of those to the country's real regions (from regions.json) and ignore anything
   // that isn't one, so the list only shows actual states / provinces / regions.
-  let regionTable = null;
-  const loadRegionTable = () => (regionTable ||= fetch("regions.json").then((r) => r.json()).catch(() => ({})));
+  let regionTable = null, regionTableData = null;
+  const regionMatchers = new Map();
+  const loadRegionTable = () => (regionTable ||= fetch("regions.json").then((r) => r.json()).catch(() => ({})).then((d) => (regionTableData = d)));
   const STOP_WORDS = new Set(["state", "province", "provincia", "provincie", "region", "regione", "county", "oblast", "prefecture",
     "ken", "to", "fu", "do", "krai", "kraj", "land", "department", "departement", "voivodeship", "canton", "kanton",
     "of", "the", "estado", "de", "del", "da", "stato", "comunidad", "communaute", "autonomous", "republic"]);
@@ -688,7 +733,8 @@
 
   // ================= Start =================
   (async function init() {
-    try { await loadCountries(); } catch (e) { console.error(e); }
+    // Region names are needed to label stations, so load them alongside the country list
+    await Promise.all([loadCountries().catch((e) => console.error(e)), loadRegionTable()]);
     // First visit: start in the visitor's own country (from their language setting, e.g. en-US → US)
     const saved = store.get(LS.settings, null);
     const guess = (navigator.language || "").split("-")[1]?.toUpperCase();

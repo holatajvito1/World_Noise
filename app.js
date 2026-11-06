@@ -71,13 +71,15 @@
       if (/^\d+s$/i.test(w)) return low;                                     // decades: "80s"
       if (/\d/.test(w)) return up;                                          // "106.1", "1LIVE"
       if (cc === "US" && /^[KW][A-Z]{2,3}$/i.test(w) && allUpper) return up;  // US call letters: "WBEZ"
+      if (cc === "IN" && up === "AIR") return up;                            // All India Radio
       if (allUpper && w.length <= 3 && !/[AEIOUY]/i.test(w)) return up;      // abbreviations without vowels: "BBC"
       if (!isFirst && SMALL.has(low)) return low;
       return titleWord(w);
     });
   }
   const stationName = (s) => tidyCase((s.name || "").replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, ""), s.countrycode) || "Unnamed Station";
-  const NOT_A_PLACE = new Set(["internet", "online", "web", "worldwide", "world", "global", "international", "none", "unknown", "n a", "na", "various"]);
+  const NOT_A_PLACE = new Set(["internet", "online", "web", "worldwide", "world", "global", "international", "none", "unknown", "n a", "na", "various",
+    "national", "nationwide", "all india", "pan india"]);
   // The station's region: the official name when we recognise it, otherwise its own text, tidied
   function regionName(s) {
     const raw = (s.state || "").replace(/\s+/g, " ").trim();
@@ -393,7 +395,7 @@
   const loadRegionTable = () => (regionTable ||= fetch("regions.json").then((r) => r.json()).catch(() => ({})).then((d) => (regionTableData = d)));
   const STOP_WORDS = new Set(["state", "province", "provincia", "provincie", "region", "regione", "county", "oblast", "prefecture",
     "ken", "to", "fu", "do", "krai", "kraj", "land", "department", "departement", "voivodeship", "canton", "kanton",
-    "of", "the", "estado", "de", "del", "da", "stato", "comunidad", "communaute", "autonomous", "republic"]);
+    "of", "the", "and", "estado", "de", "del", "da", "stato", "comunidad", "communaute", "autonomous", "republic"]); // "and" so "&" spellings match
   const norm = (str) => (str || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
     .replace(/['’ʻ`]/g, "").replace(/[^a-z0-9Ѐ-ӿ]+/g, " ").trim()
     .split(" ").filter((t) => t && !STOP_WORDS.has(t)).join(" ");

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>World Noise</title>
+  <meta name="description" content="Listen to live radio from anywhere in the world. Pick a spot on the map and tune in." />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button id="toggle-panel" class="icon-btn only-mobile" aria-label="Show station list" aria-expanded="false">☰</button>
+    <h1 class="brand">World <span>Noise</span></h1>
+    <div class="topbar-actions">
+      <button id="random-btn" class="btn" title="Tune into a random station in the current selection">🎲 Surprise me</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside id="panel" class="panel" aria-label="Stations">
+      <div class="filters">
+        <input id="search" type="search" placeholder="Search station names…" autocomplete="off" />
+        <div class="row">
+          <label>Country
+            <select id="country"><option value="">🌍 Whole world</option></select>
+          </label>
+          <label>Region / State
+            <select id="state" disabled><option value="">All regions</option></select>
+          </label>
+        </div>
+        <div class="row">
+          <label>Genre
+            <select id="tag">
+              <option value="">Any genre</option>
+              <option>pop</option><option>rock</option><option>news</option><option>talk</option>
+              <option>jazz</option><option>classical</option><option>country</option><option>hip hop</option>
+              <option>electronic</option><option>dance</option><option>oldies</option><option>80s</option>
+              <option>latin</option><option>reggae</option><option>blues</option><option>folk</option>
+              <option>ambient</option><option>chillout</option><option>sports</option><option>christian</option>
+            </select>
+          </label>
+          <label class="check"><input id="https-only" type="checkbox" /> Secure streams only</label>
+        </div>
+        <div class="tabs" role="tablist">
+          <button role="tab" class="tab active" data-view="results" aria-selected="true">Stations</button>
+          <button role="tab" class="tab" data-view="favorites" aria-selected="false">★ Favorites</button>
+        </div>
+      </div>
+      <p id="status" class="status" aria-live="polite">Loading stations…</p>
+      <ul id="list" class="list"></ul>
+    </aside>
+
+    <section class="map-wrap">
+      <div id="map" aria-label="World map of radio stations"></div>
+      <div class="map-hint">Tip: click anywhere on the map to find stations near that spot.</div>
+    </section>
+  </main>
+
+  <footer id="player" class="player idle" aria-label="Player">
+    <span id="np-logo" class="np-logo"><img alt="" referrerpolicy="no-referrer" hidden /></span>
+    <div class="np-info">
+      <div id="np-name" class="np-name">Nothing playing</div>
+      <div id="np-meta" class="np-meta">Pick a station on the map or in the list</div>
+    </div>
+    <div class="np-controls">
+      <button id="fav-btn" class="icon-btn" aria-label="Add to favorites" title="Favorite" disabled>☆</button>
+      <button id="locate-btn" class="icon-btn" aria-label="Show on map" title="Show on map" disabled>📍</button>
+      <button id="play-btn" class="play-btn" aria-label="Play" disabled>▶</button>
+      <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volume" />
+    </div>
+  </footer>
+
+  <audio id="audio" preload="none"></audio>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

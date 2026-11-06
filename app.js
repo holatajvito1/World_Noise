@@ -310,7 +310,7 @@
     // Regions in this country
     if (regions.length > 1) {
       root.append(sectionTitle(`Regions in ${where}`, () => $('.tab[data-tab="places"]').click()),
-        shelf(regions.slice(0, 16).map((r) => tile(r, () => openRegion(r)))));
+        shelf([...regions].sort((a, b) => b.count - a.count).slice(0, 16).map((r) => tile(r.name, () => openRegion(r)))));
     }
     // More from this country
     if (top.length > 8) {
@@ -340,17 +340,82 @@
     const sel = $("#country");
     for (const c of countries) sel.add(new Option(`${flag(c.iso_3166_1)} ${countryName(c.name)}`, c.iso_3166_1));
   }
+  // ---- Regions ----
+  // Radio Browser's "state" field is free text ("NY", "New York City", "Austin, TX", typos, cities…).
+  // We match each of those to the country's real regions (from regions.json) and ignore anything
+  // that isn't one, so the list only shows actual states / provinces / regions.
+  let regionTable = null;
+  const loadRegionTable = () => (regionTable ||= fetch("regions.json").then((r) => r.json()).catch(() => ({})));
+  const STOP_WORDS = new Set(["state", "province", "provincia", "provincie", "region", "regione", "county", "oblast", "prefecture",
+    "ken", "to", "fu", "do", "krai", "kraj", "land", "department", "departement", "voivodeship", "canton", "kanton",
+    "of", "the", "estado", "de", "del", "da", "stato", "comunidad", "communaute", "autonomous", "republic"]);
+  const norm = (str) => (str || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/['’ʻ`]/g, "").replace(/[^a-z0-9Ѐ-ӿ]+/g, " ").trim()
+    .split(" ").filter((t) => t && !STOP_WORDS.has(t)).join(" ");
+
+  function regionMatcher(list) {
+    const exact = new Map(), codes = new Map(), keys = [];
+    for (const [name, code, aliases = []] of list) {
+      const region = { name, code };
+      for (const a of [name, ...aliases]) {
+        // also accept German-style spellings without umlauts ("Baden-Wuerttemberg")
+        const spelled = a.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+        for (const k of new Set([norm(a), norm(spelled)])) {
+          if (k && !exact.has(k)) { exact.set(k, region); keys.push([k, region]); }
+        }
+      }
+      if (code) codes.set(code, region);
+    }
+    keys.sort((a, b) => b[0].length - a[0].length); // longest first: "West Virginia" before "Virginia"
+    return (raw) => {
+      const parts = [raw, ...raw.split(/[,/|()]/)].map((p) => p.trim()).filter(Boolean);
+      for (const p of parts) { const r = exact.get(norm(p)); if (r) return r; }                  // "Texas", "Bayern", "NYC"
+      for (const p of parts) {                                                                    // "TX", "N.S.W."
+        const c = p.replace(/\./g, "");
+        if (c.length >= 2 && c.length <= 3 && c === c.toUpperCase() && codes.has(c)) return codes.get(c);
+      }
+      const padded = ` ${norm(raw)} `;                                                            // "New York City Area"
+      for (const [k, r] of keys) if (k.length >= 4 && padded.includes(` ${k} `)) return r;
+      return null;
+    };
+  }
+
   const regionCache = new Map();
   async function loadRegions(code) {
     if (regionCache.has(code)) return regionCache.get(code);
     const c = countries.find((x) => x.iso_3166_1 === code);
-    let names = [];
+    let regions = [];
     try {
-      const states = await api(`/json/states/${encodeURIComponent(c ? c.name : code)}/`, { hidebroken: "true" });
-      names = [...new Set(states.filter((s) => s.name && s.stationcount > 0).map((s) => s.name.trim()))].sort((a, b) => a.localeCompare(b));
+      const [table, states] = await Promise.all([
+        loadRegionTable(),
+        api(`/json/states/${encodeURIComponent(c ? c.name : code)}/`, { hidebroken: "true" }),
+      ]);
+      const list = table[code];
+      if (list && list.length) {
+        const match = regionMatcher(list);
+        const byName = new Map();
+        for (const st of states) {
+          const raw = (st.name || "").trim();
+          if (!raw || !st.stationcount) continue;
+          const r = match(raw);
+          if (!r) continue;
+          const entry = byName.get(r.name) || { name: r.name, country: code, count: 0, raws: [] };
+          entry.count += st.stationcount;
+          entry.raws.push({ name: st.name, count: st.stationcount });
+          byName.set(r.name, entry);
+        }
+        regions = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+        regions.forEach((r) => r.raws.sort((a, b) => b.count - a.count));
+      }
     } catch { /* no regions */ }
-    regionCache.set(code, names);
-    return names;
+    regionCache.set(code, regions);
+    return regions;
+  }
+  // All stations for a region: query each spelling stations use for it (most common first)
+  async function regionStations(r) {
+    const lists = await Promise.all(r.raws.slice(0, 12).map((raw) =>
+      search({ countrycode: r.country, state: raw.name, stateExact: "true", limit: 300 }).catch(() => [])));
+    return dedupe(lists.flat()).sort((a, b) => (b.clickcount || 0) - (a.clickcount || 0));
   }
   function row(label, value, onClick, icon) {
     const b = document.createElement("button");
@@ -374,17 +439,17 @@
     box.append(row(`All of ${countryLabel()}`, "", () => openCountry(country)));
     const code = country, regions = await loadRegions(code);
     if (code !== country) return;
-    regions.forEach((r) => box.append(row(r, "", () => openRegion(r))));
+    regions.forEach((r) => box.append(row(r.name, String(r.count), () => openRegion(r))));
   }
   const openCountry = (code) => {
     const c = countries.find((x) => x.iso_3166_1 === code);
     const name = c ? countryName(c.name) : code;
     openList({ title: `${name}`, sub: `${flag(code)} Live Radio`, load: () => search({ countrycode: code, limit: 300 }) });
   };
-  const openRegion = (r) => openList({
-    title: r, sub: `${flag(country)} ${countryLabel()}`,
-    load: () => search({ countrycode: country, state: r, stateExact: "true", limit: 300 }),
-  });
+  const openRegion = (r) => {
+    const c = countries.find((x) => x.iso_3166_1 === r.country);
+    openList({ title: r.name, sub: `${flag(r.country)} ${c ? countryName(c.name) : ""}`, load: () => regionStations(r) });
+  };
   $("#country").addEventListener("change", (e) => {
     country = e.target.value;
     store.set(LS.settings, { country });

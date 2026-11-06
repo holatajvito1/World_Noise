@@ -1,0 +1,11 @@
+{
+  "name": "world-noise",
+  "private": true,
+  "description": "Listen to live radio from anywhere in the world.",
+  "scripts": {
+    "build:regions": "node tools/build-regions.js"
+  },
+  "devDependencies": {
+    "country-region-data": "^3.1.0"
+  }
+}

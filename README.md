@@ -31,5 +31,6 @@ python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
 ## Notes
+- **Regions:** stations list their region however they like ("NY", "New York City", "Austin, TX", city names, typos…). World Noise matches these to each country's real states, provinces or regions (from `regions.json`) and leaves out anything that isn't one. To change the region data or add spellings and cities, edit `tools/build-regions.js` and run `npm install && npm run build:regions`.
 - **Station logos:** World Noise uses the logo listed for each station in Radio Browser. If there isn't a usable one, it asks Google's public website-icon service for the icon of the station's own website. Logos are shown on a blurred backdrop made from the logo, and the results are remembered on your device. Stations with no logo get a colour tile with their name.
 On an `https://` site, browsers block stations that only stream over plain `http://`, so those are hidden automatically. When you run it locally over `http://`, they show up too.
